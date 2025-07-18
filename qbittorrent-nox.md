@@ -95,8 +95,7 @@ Chain POSTROUTING (policy ACCEPT 283M packets, 210G bytes)
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-qBittorrent 下载后自动硬链接脚本
-功能：当qBittorrent种子下载完成后，将文件硬链接到Jellyfin媒体库
+qBittorrent 下载后自动硬链接脚本（修复特殊字符问题）
 """
 
 import os
@@ -105,6 +104,10 @@ import argparse
 import logging
 import stat
 import shutil
+import grp
+import pwd
+import time
+import glob
 from collections import deque
 from typing import Tuple, Optional, List
 
@@ -115,11 +118,29 @@ MOVIES_SOURCE_DIR = os.path.join(DOWNLOAD_BASE_DIR, "movies")
 TVSHOWS_SOURCE_DIR = os.path.join(DOWNLOAD_BASE_DIR, "tvshow")
 MOVIES_DEST_DIR = os.path.join(MEDIA_BASE_DIR, "movies")
 TVSHOWS_DEST_DIR = os.path.join(MEDIA_BASE_DIR, "tvshow")
+LOG_DIR = "/storage/jellyfin-data/qblogs"
+
+# 设置文件所有者和组（根据您的系统配置修改）
+FILE_OWNER = "jellyfin"
+FILE_GROUP = "jellyfin"
 
 # 配置日志
 def setup_logging():
     """配置日志系统"""
-    log_file = "/storage/jellyfin-data/qblogs/qb_hardlink.log"
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR, exist_ok=True)
+    
+    log_file = os.path.join(LOG_DIR, "qb_hardlink.log")
+    
+    # 设置日志目录权限
+    try:
+        uid = pwd.getpwnam(FILE_OWNER).pw_uid
+        gid = grp.getgrnam(FILE_GROUP).gr_gid
+        os.chown(LOG_DIR, uid, gid)
+        os.chmod(LOG_DIR, 0o775)
+    except Exception as e:
+        logging.error(f"设置日志目录权限失败: {e}")
+    
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',
@@ -132,12 +153,7 @@ def setup_logging():
     logging.info(f"日志文件: {log_file}")
 
 def determine_category(content_path: str) -> Tuple[str, str, str]:
-    """
-    根据内容路径确定是电影还是电视剧
-    
-    返回:
-        Tuple[类型, 源目录, 目标目录]
-    """
+    """根据内容路径确定是电影还是电视剧"""
     # 获取内容路径的绝对路径
     content_path = os.path.abspath(content_path)
     
@@ -158,7 +174,8 @@ def validate_directories():
     """验证所有必要的目录都存在"""
     required_dirs = [
         MOVIES_SOURCE_DIR, TVSHOWS_SOURCE_DIR,
-        MOVIES_DEST_DIR, TVSHOWS_DEST_DIR
+        MOVIES_DEST_DIR, TVSHOWS_DEST_DIR,
+        LOG_DIR
     ]
     
     for dir_path in required_dirs:
@@ -181,27 +198,48 @@ def is_same_filesystem(path1: str, path2: str) -> bool:
         logging.error(f"无法获取文件系统信息: {e}")
         return False
 
+def set_file_permissions(path: str):
+    """设置文件权限和所有权"""
+    try:
+        # 设置权限为 rw-rw-r-- (664) 或目录为 rwxrwxr-x (775)
+        if os.path.isdir(path):
+            os.chmod(path, 0o775)
+        else:
+            os.chmod(path, 0o664)
+        
+        # 设置所有者和组
+        uid = pwd.getpwnam(FILE_OWNER).pw_uid
+        gid = grp.getgrnam(FILE_GROUP).gr_gid
+        os.chown(path, uid, gid)
+        logging.debug(f"设置权限: {path}")
+        return True
+    except Exception as e:
+        logging.error(f"设置权限失败: {path} - {e}")
+        return False
+
 def create_hardlinks(source_path: str, dest_path: str, rel_path: str):
-    """
-    创建硬链接结构
-    
-    参数:
-        source_path: 源文件/目录路径
-        dest_path: 目标目录根路径
-        rel_path: 相对路径
-    """
+    """创建硬链接结构"""
     # 创建目标目录
     target_dir = os.path.join(dest_path, rel_path)
     if not os.path.exists(target_dir):
         os.makedirs(target_dir, exist_ok=True)
+        set_file_permissions(target_dir)
         logging.info(f"创建目标目录: {target_dir}")
     
     # 处理文件或目录
     if os.path.isfile(source_path):
+        # 确保源文件有正确权限
+        if not set_file_permissions(source_path):
+            logging.error(f"无法设置源文件权限: {source_path}")
+            return
+        
         # 处理单个文件
         target_file = os.path.join(target_dir, os.path.basename(source_path))
         create_file_hardlink(source_path, target_file)
     elif os.path.isdir(source_path):
+        # 确保源目录有正确权限
+        set_file_permissions(source_path)
+        
         # 处理整个目录
         process_directory(source_path, target_dir)
     else:
@@ -209,27 +247,86 @@ def create_hardlinks(source_path: str, dest_path: str, rel_path: str):
 
 def create_file_hardlink(source_file: str, target_file: str):
     """为单个文件创建硬链接"""
-    # 检查目标文件是否已存在
-    if os.path.exists(target_file):
-        # 如果是硬链接则跳过
-        if os.path.samefile(source_file, target_file):
-            logging.info(f"已存在硬链接: {target_file}")
-            return
-        
-        # 删除现有文件（如果不是硬链接）
+    # 正确处理带特殊字符的文件名
+    safe_source = source_file
+    safe_target = target_file
+    
+    # 确保源文件可读
+    if not os.access(safe_source, os.R_OK):
+        logging.error(f"源文件不可读: {safe_source}")
+        # 尝试修复权限
         try:
-            os.remove(target_file)
-            logging.info(f"删除现有文件: {target_file}")
-        except OSError as e:
-            logging.error(f"删除文件失败: {target_file} - {e}")
+            os.chmod(safe_source, 0o664)
+            logging.info(f"已修复源文件权限: {safe_source}")
+        except Exception as e:
+            logging.error(f"修复源文件权限失败: {safe_source} - {e}")
             return
     
-    # 创建硬链接
-    try:
-        os.link(source_file, target_file)
-        logging.info(f"创建硬链接: {source_file} -> {target_file}")
-    except OSError as e:
-        logging.error(f"创建硬链接失败: {source_file} -> {target_file} - {e}")
+    # 检查目标文件是否已存在
+    if os.path.exists(safe_target):
+        # 如果是硬链接则跳过
+        try:
+            if os.path.samefile(safe_source, safe_target):
+                logging.info(f"已存在硬链接: {safe_target}")
+                return
+        except OSError as e:
+            logging.warning(f"检查相同文件时出错: {e} - 继续处理")
+        
+        # 尝试删除现有文件（如果不是硬链接）
+        try:
+            # 确保有删除权限
+            if not os.access(safe_target, os.W_OK):
+                os.chmod(safe_target, 0o666)  # 临时添加写权限
+            os.remove(safe_target)
+            logging.info(f"删除现有文件: {safe_target}")
+        except OSError as e:
+            logging.error(f"删除文件失败: {safe_target} - {e}")
+            return
+    
+    # 创建硬链接 - 添加重试逻辑
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            os.link(safe_source, safe_target)
+            set_file_permissions(safe_target)  # 设置正确权限
+            logging.info(f"创建硬链接: {safe_source} -> {safe_target}")
+            return  # 成功则退出函数
+        except OSError as e:
+            if e.errno == 1:  # Operation not permitted
+                logging.warning(f"尝试 {attempt+1}/{max_retries}: 创建硬链接被拒绝，等待后重试...")
+                
+                # 检查并修复目标目录权限
+                target_dir = os.path.dirname(safe_target)
+                if not os.access(target_dir, os.W_OK):
+                    try:
+                        os.chmod(target_dir, 0o775)
+                        logging.info(f"已修复目标目录权限: {target_dir}")
+                    except Exception as e:
+                        logging.error(f"修复目录权限失败: {target_dir} - {e}")
+                
+                time.sleep(1)  # 等待1秒后重试
+            else:
+                logging.error(f"创建硬链接失败: {safe_source} -> {safe_target} - {e}")
+                # 尝试使用引号包裹文件名
+                if "'" in safe_source or "[" in safe_source:
+                    logging.warning("文件名包含特殊字符，尝试使用glob处理")
+                    try:
+                        # 使用glob匹配带特殊字符的文件
+                        matched_files = glob.glob(safe_source)
+                        if matched_files:
+                            actual_source = matched_files[0]
+                            os.link(actual_source, safe_target)
+                            set_file_permissions(safe_target)
+                            logging.info(f"使用glob成功创建硬链接: {actual_source} -> {safe_target}")
+                            return
+                        else:
+                            logging.error(f"未找到匹配文件: {safe_source}")
+                    except Exception as e:
+                        logging.error(f"使用glob创建硬链接失败: {e}")
+                return
+    
+    # 所有重试都失败
+    logging.error(f"创建硬链接失败（重试{max_retries}次）: {safe_source} -> {safe_target}")
 
 def process_directory(source_dir: str, target_dir: str):
     """处理整个目录结构"""
@@ -239,14 +336,26 @@ def process_directory(source_dir: str, target_dir: str):
     while queue:
         src_path, dest_path = queue.popleft()
         
-        # 确保目标目录存在
+        # 确保目标目录存在并有正确权限
         if not os.path.exists(dest_path):
             os.makedirs(dest_path, exist_ok=True)
+            set_file_permissions(dest_path)
             logging.info(f"创建目录: {dest_path}")
+        else:
+            # 确保目标目录有写权限
+            if not os.access(dest_path, os.W_OK):
+                try:
+                    os.chmod(dest_path, 0o775)
+                    logging.info(f"修复目录写权限: {dest_path}")
+                except Exception as e:
+                    logging.error(f"修复目录权限失败: {dest_path} - {e}")
         
         # 遍历源目录中的所有项目
         try:
-            items = os.listdir(src_path)
+            # 使用glob正确处理带特殊字符的文件名
+            items = glob.glob(os.path.join(src_path, '*'))
+            # 只保留实际存在的文件/目录
+            items = [item for item in items if os.path.exists(item)]
         except PermissionError as e:
             logging.warning(f"无法访问目录 {src_path}: {e}")
             continue
@@ -255,24 +364,27 @@ def process_directory(source_dir: str, target_dir: str):
             continue
             
         for item in items:
-            src_item = os.path.join(src_path, item)
-            dest_item = os.path.join(dest_path, item)
+            # 获取基本文件名（不带路径）
+            base_name = os.path.basename(item)
+            dest_item = os.path.join(dest_path, base_name)
             
             # 跳过符号链接
-            if os.path.islink(src_item):
-                logging.debug(f"跳过符号链接: {src_item}")
+            if os.path.islink(item):
+                logging.debug(f"跳过符号链接: {item}")
                 continue
                 
             # 处理子目录
-            if os.path.isdir(src_item):
-                queue.append((src_item, dest_item))
+            if os.path.isdir(item):
+                queue.append((item, dest_item))
                 continue
                 
             # 处理文件
-            if os.path.isfile(src_item):
-                create_file_hardlink(src_item, dest_item)
+            if os.path.isfile(item):
+                # 设置源文件权限
+                set_file_permissions(item)
+                create_file_hardlink(item, dest_item)
             else:
-                logging.warning(f"跳过非常规文件: {src_item}")
+                logging.warning(f"跳过非常规文件: {item}")
 
 def main():
     """主函数"""
@@ -312,218 +424,17 @@ def main():
         logging.error("源和目标不在同一文件系统，无法创建硬链接")
         sys.exit(1)
     
+    # 确保源路径有正确权限
+    if os.path.isdir(args.content_path):
+        set_file_permissions(args.content_path)
+    elif os.path.isfile(args.content_path):
+        set_file_permissions(args.content_path)
+    
     # 创建硬链接结构
     create_hardlinks(args.content_path, dest_base, rel_path)
     
     # 完成
     logging.info("处理完成！")
-
-if __name__ == "__main__":
-    main()
-```
-
-在qbittorrent-nox的web界面中配置：设置/下载 里：
-  - 勾选 torrent 完成时运行外部程序 `/usr/bin/python3 /storage/jellyfin-data/link_qb2jellyfin.py "%F"` 。
-
-**注意**：使用方法：找到资源链接，新建任务后，在下载开始后，目录/storage/jellyfin-data/download/movies(或tvshows)下生成资源的目录后，进入，并将字幕文件放入其中。在文件下载完成后，字幕文件会自动移动到jellyfin的媒体库目录`/storage/jellyfin-data/download/media/movies(或tvshow)`下。
-
-
-### 辅助链接脚本
-
-运行后，将download下目录及文件整理、硬链接到media下。
-
-```python
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-目录结构复刻与硬链接脚本
-功能：将源目录结构完整复制到目标目录，所有文件使用硬链接方式创建
-要求：源目录和目标目录必须在同一个文件系统上
-"""
-
-import os
-import sys
-import argparse
-import logging
-import stat
-from collections import deque
-from typing import Tuple, Optional
-
-# 配置日志
-def setup_logging(verbose: bool = False):
-    """配置日志系统"""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-
-def check_directories(source: str, dest: str) -> Tuple[str, str]:
-    """
-    验证源目录和目标目录
-    
-    返回:
-        Tuple[源目录绝对路径, 目标目录绝对路径]
-    """
-    # 获取绝对路径
-    source = os.path.abspath(source)
-    dest = os.path.abspath(dest)
-    
-    # 检查源目录是否存在
-    if not os.path.isdir(source):
-        logging.error(f"源目录不存在: {source}")
-        sys.exit(1)
-    
-    # 检查目标目录是否存在
-    if not os.path.isdir(dest):
-        logging.info(f"目标目录不存在，正在创建: {dest}")
-        os.makedirs(dest, exist_ok=True)
-    
-    # 检查是否相同目录
-    if os.path.samefile(source, dest):
-        logging.error("源目录和目标目录是同一个目录，操作已取消")
-        sys.exit(1)
-    
-    # 检查是否同一文件系统
-    source_dev = os.stat(source).st_dev
-    dest_dev = os.stat(dest).st_dev
-    if source_dev != dest_dev:
-        logging.error("源目录和目标目录不在同一文件系统，无法创建硬链接")
-        sys.exit(1)
-    
-    return source, dest
-
-def is_symlink(path: str) -> bool:
-    """检查路径是否是符号链接"""
-    try:
-        return os.path.islink(path)
-    except OSError:
-        return False
-
-def process_directory(source: str, dest: str, dry_run: bool = False):
-    """
-    处理目录结构并创建硬链接
-    
-    参数:
-        source: 源目录路径
-        dest: 目标目录路径
-        dry_run: 仅模拟运行，不实际修改文件系统
-    """
-    # 使用队列进行广度优先遍历
-    queue = deque([(source, dest)])
-    processed_items = 0
-    created_links = 0
-    skipped_items = 0
-    
-    while queue:
-        src_path, dest_path = queue.popleft()
-        
-        # 确保目标目录存在
-        if not os.path.exists(dest_path) and not dry_run:
-            os.makedirs(dest_path, exist_ok=True)
-            logging.info(f"创建目录: {dest_path}")
-        
-        # 遍历源目录中的所有项目
-        try:
-            items = os.listdir(src_path)
-        except PermissionError as e:
-            logging.warning(f"无法访问目录 {src_path}: {e}")
-            continue
-        except OSError as e:
-            logging.error(f"读取目录 {src_path} 时出错: {e}")
-            continue
-            
-        for item in items:
-            src_item = os.path.join(src_path, item)
-            dest_item = os.path.join(dest_path, item)
-            processed_items += 1
-            
-            # 跳过符号链接
-            if is_symlink(src_item):
-                logging.debug(f"跳过符号链接: {src_item}")
-                skipped_items += 1
-                continue
-                
-            # 处理目录
-            if os.path.isdir(src_item):
-                queue.append((src_item, dest_item))
-                continue
-                
-            # 处理文件
-            if os.path.isfile(src_item):
-                try:
-                    # 检查目标文件是否存在
-                    if os.path.exists(dest_item):
-                        # 如果是硬链接，跳过
-                        if os.path.samefile(src_item, dest_item):
-                            logging.debug(f"已存在硬链接: {dest_item}")
-                            skipped_items += 1
-                            continue
-                            
-                        # 删除现有文件（如果不是硬链接）
-                        if not dry_run:
-                            os.remove(dest_item)
-                            logging.info(f"删除现有文件: {dest_item}")
-                    
-                    # 创建硬链接
-                    if not dry_run:
-                        os.link(src_item, dest_item)
-                        created_links += 1
-                        logging.info(f"创建硬链接: {src_item} -> {dest_item}")
-                    else:
-                        logging.info(f"[模拟] 将创建硬链接: {src_item} -> {dest_item}")
-                    
-                except OSError as e:
-                    logging.error(f"处理文件 {src_item} 时出错: {e}")
-            else:
-                logging.warning(f"跳过非常规文件: {src_item}")
-                skipped_items += 1
-    
-    # 输出统计信息
-    logging.info(f"\n处理完成:")
-    logging.info(f"  处理项目总数: {processed_items}")
-    logging.info(f"  创建硬链接数: {created_links}")
-    logging.info(f"  跳过项目数: {skipped_items}")
-
-def main():
-    """主函数"""
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(
-        description="目录结构复刻与硬链接脚本",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    parser.add_argument("source", help="源目录路径")
-    parser.add_argument("dest", help="目标目录路径")
-    parser.add_argument("--verbose", "-v", action="store_true", help="显示详细输出")
-    parser.add_argument("--dry-run", "-n", action="store_true", help="模拟运行，不实际修改文件系统")
-    args = parser.parse_args()
-    
-    # 配置日志
-    setup_logging(args.verbose)
-    
-    # 验证目录
-    logging.info("开始目录验证...")
-    source, dest = check_directories(args.source, args.dest)
-    logging.info(f"源目录: {source}")
-    logging.info(f"目标目录: {dest}")
-    
-    # 处理目录
-    logging.info("\n开始处理目录和文件...")
-    process_directory(source, dest, args.dry_run)
-    
-    # 显示磁盘使用情况
-    if not args.dry_run:
-        logging.info("\n磁盘使用情况:")
-        source_size = os.popen(f"du -sh {source}").read().strip()
-        dest_size = os.popen(f"du -sh {dest}").read().strip()
-        logging.info(f"  源目录: {source_size}")
-        logging.info(f"  目标目录: {dest_size}")
-    
-    logging.info("\n操作成功完成！")
 
 if __name__ == "__main__":
     main()
