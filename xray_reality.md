@@ -29,7 +29,7 @@
             "settings": {
                 "clients": [
                     {
-                        "id": "579c6134-1409-4152-928e-9658a754350b",
+                        "id": "id-id-id-id",
                         "flow": "xtls-rprx-vision"
                     }
                 ],
@@ -45,7 +45,7 @@
                     "serverNames": [
                         "www.microsoft.com"
                     ],
-                    "privateKey": "uHq_zsX4O5C7z0eiYagsRMJetoPFyzAsgTMBtI32xXA",
+                    "privateKey": "privateKey",
                     "minClientVer": "",
                     "maxClientVer": "",
                     "maxTimeDiff": 0,
@@ -82,6 +82,3 @@
         }
     }
 }
-
-Private key: CKf9Y8afqxUVEiJIh1pvPa0ACGWYuxZ0jq8VqgimYE4
-Public key: 8aNLM9ijLIP_vPmVP-Tkr6ZDU4mVg0zdBcJG_X23uHU

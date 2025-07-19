@@ -11,7 +11,7 @@
 
 ### docker compose 配置
 
-不走traefik网关的原因是，需要使用host模式，使得jellyfin可以正常访问非docker的xray，以刮削电影信息。
+不走traefik网桥的原因是，需要使用host模式，使得jellyfin可以正常访问非docker的xray，以刮削themoviedb等数据源的电影信息。
 
 
 ```yaml
@@ -24,7 +24,7 @@ services:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
     user: "996:986"  # jellyfin 用户的 UID:GID
-    group_add:    #非root运行需加入render组,自行查找render组ID，解决调用失败问题
+    group_add:    #非root运行需加入render组,自行查找本机render组ID，解决调用失败问题
       - "993"
     network_mode: 'host'
     #networks:
@@ -46,12 +46,12 @@ services:
               count: all
               capabilities: [gpu]
     environment:
-      - JELLYFIN_PublishedServerUrl=https://movie.tanzmiao.com
-      - http_proxy=http://172.17.0.1:1080
-      - https_proxy=http://172.17.0.1:1080
+      - JELLYFIN_PublishedServerUrl=https://movie.example.com
+      - http_proxy=http://172.17.0.1:1080   #自行配置代理，或不使用代理（无法刮削国外数据库，可搜索刮削豆瓣插件）
+      - https_proxy=http://172.17.0.1:1080  #自行配置代理，或不使用代理（无法刮削国外数据库，可搜索刮削豆瓣插件）
     #labels:
     #  - "traefik.enable=true"
-    #  - "traefik.http.routers.jellyfin.rule=Host(`movie.tanzmiao.com`)"
+    #  - "traefik.http.routers.jellyfin.rule=Host(`movie.example.com`)"
     #  - "traefik.http.routers.jellyfin.entrypoints=websecure"
     #  - "traefik.http.routers.jellyfin.tls=true"
     #  - "traefik.http.routers.jellyfin.tls.certresolver=zerossl"
@@ -60,9 +60,9 @@ services:
 
 ### GPU加速
 
-启用GPU加速，需安装 nvidia 驱动和 nvidia-docker-container ，jellyfin 的 WEB 界面可跳转官网文档。
+启用GPU加速，需安装 nvidia 驱动和 `nvidia-docker-container` ，jellyfin 的 WEB 界面-控制台-播放-转码-硬件加速帮助可跳转jellyfin官网文档，按照教程安装，或问AI。
  
-nvdia runtime 需在docker config`vim /etc/docker/daemon.json`中添加启用
+**nvdia runtime 需在docker config`vim /etc/docker/daemon.json`中添加启用**
 ```
 {
 ...
@@ -74,9 +74,13 @@ nvdia runtime 需在docker config`vim /etc/docker/daemon.json`中添加启用
   }
 }
 ```
-在需要使用nvidia runtime 的docker compose中添加`runtime: nvidia` 
+然后在需要使用nvidia runtime 的docker compose中添加`runtime: nvidia` 
 
 进入容器`docker exec -it jellyfin /bin/bash`，运行`nvidia-smi`查看是否正常。
+测试播放，调低码率，触发jellyfin转码，然后服务器运行`nvidia-smi`查看是否有ffmpeg工作，检查jellyfin的日志`docker logs -f jellyfin`，排查是否有报错、权限等问题。
+
+---
+---
 
 ## 其他自用工具
 
@@ -86,7 +90,7 @@ nvdia runtime 需在docker config`vim /etc/docker/daemon.json`中添加启用
 
 #### 配置
 
-在`/storage/jellyfin-data`（dcoker compose设置的主媒体文件目录）下，新建python脚本`subtitle_monitor.py`，内容如下(来自deepseak，已测试，需先安装`pip install watchdog chardet`)：
+在`/storage/jellyfin-data`（dcoker compose设置的主媒体文件目录）下，新建python脚本`subtitle_monitor.py`，内容如下(来自deepseek，已测试，需先安装`pip install watchdog chardet`)：
 
 
 ```python
@@ -113,8 +117,8 @@ logging.basicConfig(
 logger = logging.getLogger('SubMonitor')
 
 # ----------------- 常量 -----------------
-MOVIE_ROOT = '/storage/jellyfin-data/media/movie'
-TVSHOW_ROOT = '/storage/jellyfin-data/media/tvshow'
+MOVIE_ROOT = '/storage/jellyfin-data/media/movie'   #对应web页面添加的媒体库目录
+TVSHOW_ROOT = '/storage/jellyfin-data/media/tvshow' #对应web页面添加的媒体库目录
 VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.m4v', '.ts', '.webm']
 SUBTITLE_EXTENSIONS = ['.ass', '.srt', '.ssa', '.sub']
 
@@ -464,17 +468,20 @@ WantedBy=multi-user.target
 #### 功能
 
 1. 监控指定目录下的字幕文件，当有新字幕文件添加时(包括硬链接产生)，自动检查编码、修复、重命名。
+   
+   *为何修复？从win等其他设备，手动通过ftp等软件导入字幕到linux服务器，会因为编码不同导致ass等格式文件无法被jellyfin识别，有时ass转码还会丢失头部信息。*
+
 2. 支持电视剧和电影字幕的自动重命名，确保字幕文件与视频文件名一致。需将字幕放到视频文件的同目录。电影：寻找此目录下最大的视频文件名。电视剧：根据当前目录下文件的`S01E01`等文件名匹配。
 3. 支持自动跳过已处理过的文件，避免重复处理。
 4. 支持自动跳过样本文件和预告片文件，避免误处理。
 
 #### 使用说明
 
-- **首次启动**时，会扫描指定目录下的所有字幕文件，并自动修复、重命名。后续新增字幕文件时，会自动触发处理。*（耗时较久，100字幕文件约100s）*
+- **首次启动**时，会扫描指定目录下的所有字幕文件，并自动修复、重命名。**后续新增字幕文件时，会自动触发处理。**
 
-- 启动服务后，将字幕文件放在对应视频目录内，即可自动整理，供jellyfin识别。
+- 启动服务后，将字幕文件放在对应视频目录内，即可自动检查并重命名，供jellyfin识别。
 
-*建议：配合本note下的qbittorrent-nox版的自定义硬链接脚本使用，在下载完成后，自动将视频、字幕等链接到媒体库，触发监控脚本。*
+*建议：配合本note下的qbittorrent-nox版的自定义硬链接脚本使用，在下载完成后，qb自动将视频、手动导入的字幕等硬链接到媒体库，触发监控脚本。*
 
 ---
 
@@ -482,7 +489,7 @@ WantedBy=multi-user.target
 
 #### 配置
 
-在`/storage/jellyfin-data`（dcoker compose设置的主媒体文件目录）下，新建python脚本`check_missing_sub.py`，内容如下(来自deepseak，已测试)：
+在`/storage/jellyfin-data/media`（dcoker compose设置的主媒体文件目录）下，新建python脚本`check_missing_sub.py`，内容如下(来自deepseek，已测试)：
 ```
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -595,10 +602,10 @@ if __name__ == "__main__":
 
 #### 使用说明
 
-设置权限：`chmod +x /storage/jellyfin-data/check_missing_sub.py`
+设置权限：`chmod +x /storage/jellyfin-data/media/check_missing_sub.py`
 
-直接运行`/storage/jellyfin-data/check_missing_sub.py`，默认扫描本目录及子目录下的视频文件，并检查缺少字幕的文件并输出。
+直接运行`/storage/jellyfin-data/media/check_missing_sub.py`，默认扫描本目录及子目录下的视频文件，检查缺少字幕的文件并输出信息。
 
-如需指定目录，使用`/storage/jellyfin-data/check_missing_sub.py /path/to/directory`。
+如需指定目录，使用`/storage/jellyfin-data/media/check_missing_sub.py /path/to/directory`。
 
-*注意：此工具仅检查缺少字幕的视频文件，不会自动下载字幕。并且不剔除可能的samle等样片。*
+*注意：此工具仅检查缺少字幕的视频文件，不会自动下载字幕。并且不剔除可能的sample等样片。*

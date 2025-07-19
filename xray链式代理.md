@@ -1,7 +1,8 @@
-二、详细部署步骤
+# 部署步骤
 
-步骤 1：准备环境（成都 VPS）
-bash
+**！！！本文档未测试完成，仅作记录！！！**
+
+步骤 1：准备环境（中转 VPS）
 
 更新系统
 `sudo apt update && sudo apt upgrade -y`
@@ -23,13 +24,13 @@ load_module modules/ngx_stream_module.so;
 stream {
     # SNI 路由映射表
     map $ssl_preread_server_name $backend {
-        tanybing.tanzmiao.com   singapore;  # 特殊域名
+        example.example.com   VPS;  # 特殊域名到目标VPS
         default                 home;       # 其他所有域名
     }
 
     # 上游服务器定义
-    upstream singapore {
-        server <新加坡公网IP>:443;  # 替换为实际IP
+    upstream VPS {  
+        server <VPS公网IP>:443;  # 替换为实际目标（终点）IP
     }
     
     upstream home {
@@ -130,7 +131,7 @@ sudo systemctl status nginx
 sudo wg show
 ```
 
-三、新加坡 Xray 配置验证
+# Xray 配置验证
 1. Xray 服务端配置
 
 ```json
@@ -149,7 +150,7 @@ sudo wg show
       "network": "tcp",
       "security": "tls",
       "tlsSettings": {
-        "serverName": "tanybing.tanzmiao.com",
+        "serverName": "example.example.com",
         "certificates": [{
           "certificateFile": "/etc/xray/cert.pem",
           "keyFile": "/etc/xray/key.pem"
@@ -171,12 +172,12 @@ sudo wg show
 SNI 穿透测试：
 
 ```bash
-openssl s_client -connect tanybing.tanzmiao.com:443 \
--servername tanybing.tanzmiao.com
+openssl s_client -connect example.example.com:443 \
+-servername example.example.com
 ```
 ✅ 应显示新加坡 VPS 的证书
 
-✅ 证书中的 CN/SAN 包含 tanybing.tanzmiao.com
+✅ 证书中的 CN/SAN 包含 example.example.com
 
 Xray 日志验证：
 
@@ -186,7 +187,7 @@ tail -f /var/log/xray/access.log
 期望看到：
 
 ```text
-2023/07/16 12:00:00 [Info] accepted tcp:<客户端IP>:12345 -> tanybing.tanzmiao.com:443
+2023/07/16 12:00:00 [Info] accepted tcp:<客户端IP>:12345 -> example.example.com:443
 ```
 流量完整性测试：
 
@@ -210,10 +211,10 @@ TLS 握手过程完整
 # /usr/local/bin/test_sni_route.sh
 
 # 测试特殊域名
-echo "测试 tanybing.tanzmiao.com："
+echo "测试 example.example.com："
 curl -svo /dev/null \
---resolve tanybing.tanzmiao.com:443:127.0.0.1 \
-https://tanybing.tanzmiao.com 2>&1 | grep -E 'HTTP|SSL|Connected'
+--resolve example.example.com:443:127.0.0.1 \
+https://example.example.com 2>&1 | grep -E 'HTTP|SSL|Connected'
 
 # 测试普通域名
 echo -e "\n测试 example.com："
@@ -306,7 +307,7 @@ sudo conntrack -E -p tcp --dport 443
 2. 验证方法
 ```bash
 # 在成都VPS查看连接跟踪
-sudo conntrack -L -d tanybing.tanzmiao.com
+sudo conntrack -L -d example.example.com
 
 # 示例输出：
 # tcp 6 431996 ESTABLISHED src=Client_IP dst=CD_IP sport=54321 dport=443 
