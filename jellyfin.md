@@ -74,6 +74,13 @@ services:
   }
 }
 ```
+同时，修改`vi /etc/nvidia-container-runtime/config.toml`：
+```
+#设置cgroup
+no-cgroups = false
+```
+
+
 重启docker：`systemctl restart docker`
 
 然后在需要使用nvidia runtime 的docker compose中添加`runtime: nvidia` 
