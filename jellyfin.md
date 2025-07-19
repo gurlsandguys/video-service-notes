@@ -5,7 +5,7 @@
 
 使用docker compose。
 
-- 需新建专属用户 
+- 需新建专属用户 jellyfin，无登录、无目录：`useradd -M -s /bin/false jellyfin`
 - 提前建立相关volumes目录，并设置权限
 
 
