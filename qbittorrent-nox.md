@@ -15,17 +15,17 @@
 
 - 注意：本次设计上，jellyfin使用 `/storage/jellyfin-data/media/`下（movie/ 和 tvshow/）作为媒体库，qbittorrent-nox使用 `/storage/jellyfin-data/download/`下作为下载目录（也建立movie/ 和 tvshow/，保持子目录结构一致）。下载完成后通过硬链接，自动链接到jellyfin的媒体库目录下。
 
-- 设置分类，到`/storage/jellyfin-data/download`下的`/movies`或`/tvshow`，需保障和jellyfin设置的 的目录一致，否则自动链接脚本会产生问题。
+- qbittorrent的web页面右键分类，新建分类，并指定分别下载到`/storage/jellyfin-data/download`下的`/movies`或`/tvshow`，需保障和jellyfin设置的 的目录一致，否则自动链接脚本会产生问题。
 
-  - jellyfin媒体库，例：`/storage/jellyfin-data/media/movies`
+  - jellyfin电影媒体库，例：`/storage/jellyfin-data/media/movies`
 
   - qbittorrent下载目录，例：`/storage/jellyfin-data/download/movies`，需保持一致。
 
-  - jellyfin媒体库，例：`/storage/jellyfin-data/media/tvshow`
+  - jellyfin剧集媒体库，例：`/storage/jellyfin-data/media/tvshow`
 
   - qbittorrent下载目录，例：`/storage/jellyfin-data/download/tvshow`，需保持一致。
 
-- 下载媒体时，记得勾选分类，并设置下载位置到`/storage/jellyfin-data/download/`，设置`torrent管理模式：自动`。后续调整分类时，就会自动转移目录。需在web页面设置里设置：`当 Torrent 分类修改时：重新定位 Torrent`。
+- qbittorrent的web页面-设置`torrent管理模式：自动`。新建下载媒体时，弹出的对话框记得勾选分类已自动指定位置。调整分类时，就会自动转移目录。需在web页面设置里设置：`当 Torrent 分类修改时：重新定位 Torrent`。
 
 - 设置/下载 里，勾选 为所有文件预分配磁盘空间。
   - 勾选 torrent 完成时运行外部程序 `/usr/bin/python3 /storage/jellyfin-data/link_qb2jellyfin.py "%F"` *配合下方工具*。
