@@ -25,7 +25,7 @@
 
   - qbittorrent下载目录，例：`/storage/jellyfin-data/download/tvshow`，需保持一致。
 
-- qbittorrent的web页面-设置`torrent管理模式：自动`。新建下载媒体时，弹出的对话框记得勾选分类已自动指定位置。调整分类时，就会自动转移目录。需在web页面设置里设置：`当 Torrent 分类修改时：重新定位 Torrent`。
+- qbittorrent的web页面-设置`torrent管理模式：自动`。新建下载媒体时，弹出的对话框记得勾选分类以自动指定位置。调整分类时，就会自动转移目录。需在web页面设置里设置：`当 Torrent 分类修改时：重新定位 Torrent`。
 
 - 设置/下载 里，勾选 为所有文件预分配磁盘空间。
   - 勾选 torrent 完成时运行外部程序 `/usr/bin/python3 /storage/jellyfin-data/link_qb2jellyfin.py "%F"` *配合下方工具*。
