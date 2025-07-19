@@ -74,10 +74,13 @@ services:
   }
 }
 ```
+重启docker：`systemctl restart docker`
+
 然后在需要使用nvidia runtime 的docker compose中添加`runtime: nvidia` 
 
-进入容器`docker exec -it jellyfin /bin/bash`，运行`nvidia-smi`查看是否正常。
-测试播放，调低码率，触发jellyfin转码，然后服务器运行`nvidia-smi`查看是否有ffmpeg工作，检查jellyfin的日志`docker logs -f jellyfin`，排查是否有报错、权限等问题。
+进入容器`docker exec -it jellyfin /bin/bash` 显示无用户,exit退出docker容器后变为执行：`docker exec -u root -it jellyfin /bin/bash`，运行`nvidia-smi`查看是否正常。
+
+测试播放，客户端播放器调低码率，触发jellyfin转码，然后服务器运行`nvidia-smi`查看是否有ffmpeg工作，检查jellyfin的日志`docker logs -f jellyfin`，排查是否有报错、权限等问题。（常见ffmepg对cache等无写入权限问题，exit code: 187）
 
 ---
 ---
