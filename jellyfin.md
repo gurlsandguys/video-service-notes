@@ -93,7 +93,7 @@ services:
 
 #### 配置
 
-在`/storage/jellyfin-data`（dcoker compose设置的主媒体文件目录）下，新建python脚本`subtitle_monitor.py`，内容如下(来自deepseek，已测试，需先安装`pip install watchdog chardet`)：
+在`/storage/jellyfin-data`（dcoker compose设置的主媒体文件目录）下，新建python脚本`subtitle_monitor.py`，内容如下(来自deepseek，已测试，需先安装`apt install python3-watchdog python3-chardet`)：
 
 
 ```python
