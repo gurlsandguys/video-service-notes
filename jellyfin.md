@@ -24,7 +24,7 @@ services:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
     user: "996:986"  # jellyfin 用户的 UID:GID
-    group_add:    #非root运行需加入render组,自行查找本机render组ID，解决调用失败问题
+    group_add:    #非root运行需加入render组,getent group render | cut -d: -f3，解决调用失败问题
       - "993"
     network_mode: 'host'
     #networks:
