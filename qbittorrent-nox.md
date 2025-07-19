@@ -270,9 +270,14 @@ if __name__ == "__main__":
 
 #### 使用
 
+手动：
 ```bash
 python3 link_qb2jellyfin.py /path/to/source
 ```
+
+自动：
+
+配合上面提到的qbittorren web界面的下载完成执行脚本，即可实现自动执行。
 
 #### 注意事项
 - 请确保你有足够的权限来访问和修改源目录和目标目录。
