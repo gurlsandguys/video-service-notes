@@ -492,7 +492,7 @@ WantedBy=multi-user.target
 
 #### 配置
 
-在`/storage/jellyfin-data/media`（dcoker compose设置的主媒体文件目录）下，新建python脚本`check_missing_sub.py`，内容如下(来自deepseek，已测试)：
+在`/storage/jellyfin-data/media`（dcoker compose及jellyfin web设置的主媒体文件目录）下，新建python脚本`check_missing_sub.py`，内容如下(来自deepseek，已测试)：
 ```
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
