@@ -34,9 +34,9 @@
 
 ## 避开VPN下载(无代理请忽略）
 
-有的情况下，仅设置qt web里的网络接口就可以避免，如果测试可以，就忽略下面内容。
+**有的情况下，仅设置qt web里的网络接口就可以避免，如果测试可以，就忽略下面内容。**
 
-*注：以下内容通过服务动态添加，移除服务后，重启即可清除规则*
+*注：以下look mark路由规则通过服务动态添加，移除服务后，重启即可清除规则*
 
 1. 在iptables里打mark标记，避免走VPN下载。
 
@@ -132,7 +132,7 @@
 **注意需要配置jellyfin相关目录own为jellyfin及其组 ，并至少设置770权限** 
 
 
-在`/storage/jellyfin-data`（dcoker compose设置的主媒体文件目录）下，新建python脚本`link_qb2jellyfin.py`，内容如下(来自deepseek，已测试)：
+在`/storage/jellyfin-data`（dcoker compose及jellyfin web里设置的主媒体文件目录）下，新建python脚本`link_qb2jellyfin.py`，内容如下(来自deepseek，已测试)：
 
 ```python
 #!/usr/bin/env python3
@@ -278,6 +278,31 @@ python3 link_qb2jellyfin.py /path/to/source
 自动：
 
 配合上面提到的qbittorren web界面的下载完成执行脚本，即可实现自动执行。
+
+#### 配合jellyfin自动字幕整理工具的日常使用：
+
+1. 找到资源磁力链接，qt web页面添加下载(选择分类，使qt自动保存到正确目录)，此时download目录对应的分类子文件下就有了对应的文件（预分配空间）。
+2. 手动选择并将字幕下载下来，通过sftp等工具（推荐termius,免费版够个人用）放到对应下载目录下，例:`/storage/jellyfin-data/download/tvshow/Love.Death.and.Robots.S01.1080p.NF.WEB-DL.DDP5.1.Atmos.H.264-TURG`（需和视频文件在同一级，即.mkv和.ass在同一级，注意是download下，media下的目录结构还没建立）。
+
+3. **自动化**：等待下载完成后，此脚本会被qb自动执行（上面提到的设置）从而将刚下载完成的资源目录下的视频、字幕全部硬链接到jellyfin媒体库，ass等文件创建硬链接会自动触发`jellyfin.md`里的自动整理字幕脚本，完成字幕文件名匹配。jellyfin会自己扫描媒体库添加影视。
+
+4. 常用检查命令：
+   ```bash
+   # 查看自动硬链接日志
+   tail -f /storage/jellyfin-data/qblogs/qb_hardlink.log.log
+
+   # 未有自动硬链接的视频，手动执行脚本排查问题
+   # 注意：手动执行时，需要将`/path/to/source`替换为实际的下载目录，例如：python3 link_qb2jellyfin.py /storage/jellyfin-data/download/tvshow/Love.Death.and.Robots.S01.1080p.NF.WEB-DL.DDP5.1.Atmos.H.264-TURG
+
+   # 查看jellyfin字幕整理脚本日志
+   journalctl -u subtitle-monitor -f
+   # 或
+   journalctl -u subtitle-monitor -n 100
+
+   # 字幕整理有问题，可重启subtitle-monitor，自动扫描媒体库所有字幕文件，重新匹配
+   # systemctl restart subtitle-monitor
+   
+   ```
 
 #### 注意事项
 - 请确保你有足够的权限来访问和修改源目录和目标目录。

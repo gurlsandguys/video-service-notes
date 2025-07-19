@@ -484,7 +484,7 @@ WantedBy=multi-user.target
 
 - 启动服务后，将字幕文件放在对应视频目录内，即可自动检查并重命名，供jellyfin识别。
 
-*建议：配合本note下的qbittorrent-nox版的自定义硬链接脚本使用，在下载完成后，qb自动将视频、手动导入的字幕等硬链接到媒体库，触发监控脚本。*
+*建议：配合本note下的qbittorrent-nox版的自定义硬链接脚本使用，在下载完成后，qb自动将视频、手动导入的字幕等硬链接到媒体库，触发监控脚本。日常使用见qbittorrent-nox.md*
 
 ---
 
